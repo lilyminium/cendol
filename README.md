@@ -1,8 +1,8 @@
 cendol
 ==============================
 [//]: # (Badges)
-[![GitHub Actions Build Status](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/cendol/workflows/CI/badge.svg)](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/cendol/actions?query=workflow%3ACI)
-[![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/cendol/branch/master/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/cendol/branch/master)
+[![GitHub Actions Build Status](https://github.com/lilyminium/cendol/workflows/CI/badge.svg)](https://github.com/lilyminium/cendol/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/lilyminium/cendol/branch/master/graph/badge.svg)](https://codecov.io/gh/lilyminium/cendol/branch/master)
 
 
 Tools for parametrizing a residue-based polymer force field
