@@ -14,6 +14,24 @@ def get_r_substituents(
     r_linkages: Dict[int, Set[int]] = {},
     substituents: Dict[int, List[str]] = {},
 ) -> Dict[int, List[str]]:
+    """
+    Create a dictionary of substituents to add to the scaffold,
+    where each key corresponds to a labelled R group (e.g. 1 corresponds to R1)
+
+    Parameters
+    ----------
+    r_linkages: dict (optional)
+        Linkages between labelled R-groups. e.g. {1: [2, 3]} means that
+        monomers will join together between R1-R2 and R1-R3.
+    substituents: dict (optional)
+        dictionary of capped substituents items, where
+        each key corresponds to the labelled R-group that was not capped,
+        (e.g. 1 corresopnds to R1)
+    
+    Returns
+    -------
+    Dictionary of substituents to add to the scaffold
+    """
     # translate links -> substituents
     link_subs = defaultdict(list)
     for i, partners in r_linkages.items():
@@ -29,6 +47,32 @@ def cap_r_groups(
     r: int = 1,
     r_groups: List[int] = [],
 ) -> List[str]:
+    """
+    Cap each scaffold with substituents for each R-group except ``r``.
+
+    Parameters
+    ----------
+    constructor: Constructor
+        Constructor object from constructure
+    scaffold: Scaffold
+        Scaffold object from constructure with R groups defined
+    substituents: dict (optional)
+        A dictionary of substituents to add to the scaffold, where
+        each key corresponds to a labelled R group (e.g. 1 corresponds to R1)
+        and each value a list of SMILES patterns corresponding to possible
+        substituents to attach. If groups are not available for a labelled
+        R-group, it will be capped with a hydrogen.
+    r: int (optional)
+        R-group to not cap
+    r_groups: list (optional)
+        Available labelled R-groups
+
+    Returns
+    -------
+    List of SMILES strings with [R] in place of uncapped R-group
+    """
+    if not r_groups:
+        r_groups = constructor.get_replaceable_r_groups(scaffold)
     cap_r_groups = [i for i in r_groups if i != r]
     r_subs = {i: substituents.get(i, ["[R][H]"]) for i in cap_r_groups}
     smiles = constructor.enumerate_combinations(scaffold, r_subs, validate=False)
@@ -43,7 +87,29 @@ def join_monomers(
     r_linkages: Dict[int, Set[int]] = {},
     n_neighbor_monomers: int = 1,
     label_central_atoms: bool = True,
-):
+) -> List[str]:
+    """Join monomers together at specified ``r_linkages``
+
+    Parameters
+    ----------
+    constructor: Constructor
+        Constructor object from constructure
+    monomer_smiles: list (optional)
+        List of SMILES with labelled R-groups describing
+        scaffolds for constructure. e.g. "C([R1])([R2])([R3])"
+    r_linkages: dict (optional)
+        Linkages between labelled R-groups. e.g. {1: [2, 3]} means that
+        monomers will join together between R1-R2 and R1-R3.
+    n_neighbor_monomers: int (optional)
+        How many neighbors to add onto each labelled R-group
+    label_central_atoms: bool (optional)
+        Whether to label the atoms of the original scaffold with
+        atom map numbers
+
+    Returns
+    -------
+    List of SMILES
+    """
     if n_neighbor_monomers < 0:
         raise ValueError("Cannot have negative numbers of neighbors")
 
