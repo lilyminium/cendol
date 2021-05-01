@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Tuple, Set
 
 from constructure.scaffolds import Scaffold
 from rdkit import Chem
@@ -136,3 +136,34 @@ def label_scaffold(smiles: str, scaffold: Scaffold) -> str:
         except RuntimeError:
             pass
     return Chem.MolToSmiles(mol)
+
+
+def cleave_substituents_from_bond(offmol: Molecule,
+                                  bond_tuple: Tuple[int, int],
+                                  atom_index: int) -> List[str]:
+    rdmol = Chem.RWMol(offmol.to_rdkit())
+    rdatom = rdmol.GetAtomWithIdx(atom_index)
+    sub_atoms = set()
+    for bond in rdatom.GetBonds():
+        other_idx = bond.GetOtherAtomIdx(atom_index)
+        bond_atoms = tuple(sorted([atom_index, other_idx]))
+        if bond_atoms != bond_tuple:
+            sub_atoms.add(other_idx)
+    
+    for other_index in sub_atoms:
+        rdmol.RemoveBond(atom_index, other_index)
+    rdmol.UpdatePropertyCache()
+
+    atoms_to_keep = set()
+    fragments = Chem.GetMolFrags(rdmol, sanitizeFrags=False)
+    for frag in fragments:
+        if any(i in frag for i in sub_atoms):
+            atoms_to_keep.add(tuple(sorted(frag)))
+    
+    smiles = []
+    for atoms in atoms_to_keep:
+        root_atom = [i for i in sub_atoms if i in atoms][0]
+        smiles.append(Chem.MolFragmentToSmiles(rdmol, list(atoms)),
+                      rootedAtAtom=root_atom, canonical=True,
+                      isomericSmiles=True, allHsExplicit=True)
+    return smiles
