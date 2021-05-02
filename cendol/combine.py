@@ -81,13 +81,11 @@ def cap_r_groups(
     return smiles
 
 
-def join_monomers(
-    constructor: Constructor,
-    monomer_smiles: List[str] = [],
-    r_linkages: Dict[int, Set[int]] = {},
-    n_neighbor_monomers: int = 1,
-    label_central_atoms: bool = True,
-) -> List[str]:
+def join_monomers(constructor: Constructor,
+                  monomer_smiles: List[str] = [],
+                  r_linkages: Dict[int, Set[int]] = {},
+                  n_neighbor_monomers: int = 1,
+                  label_central_atoms: bool = True,) -> List[str]:
     """Join monomers together at specified ``r_linkages``
 
     Parameters
@@ -121,9 +119,8 @@ def join_monomers(
             links[j].add(i)
 
     # each monomer_smiles is a scaffold
-    scaffolds = [
-        Scaffold(smiles=m, r_groups={}) for m in monomer_smiles  # skip r groups for now
-    ]
+    scaffolds = [Scaffold(smiles=m, r_groups={})  # skip r groups for now
+                 for m in monomer_smiles]
     scaffold_r_groups = []
     for scaffold in scaffolds:
         r_groups = constructor.get_replaceable_r_groups(scaffold)
@@ -136,9 +133,8 @@ def join_monomers(
         capped = defaultdict(list)
         for scaffold, r_groups in zip(scaffolds, scaffold_r_groups):
             for r in r_groups:
-                smiles = cap_r_groups(
-                    constructor, scaffold, substituents=caps, r=r, r_groups=r_groups
-                )
+                smiles = cap_r_groups(constructor, scaffold, r=r,
+                                      substituents=caps, r_groups=r_groups)
                 capped[r].extend(smiles)
 
         caps = get_r_substituents(substituents=capped, r_linkages=links)
@@ -147,9 +143,8 @@ def join_monomers(
     # now combine with each central scaffold
     combinations = []
     for scaffold, r_groups in zip(scaffolds, scaffold_r_groups):
-        smiles = cap_r_groups(
-            constructor, scaffold, substituents=caps, r=-1, r_groups=r_groups
-        )
+        smiles = cap_r_groups(constructor, scaffold, r=-1,
+                              substituents=caps, r_groups=r_groups)
         if label_central_atoms:
             smiles = [label_scaffold(x, scaffold) for x in smiles]
         combinations.extend(smiles)
