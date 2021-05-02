@@ -9,9 +9,9 @@ except ImportError:
     from .rdfuncs import sdf_to_offmols, fragment_into_substituent_smiles
 
 
-def get_breakable_bonds(offmol: Molecule,
-                        get_bonds_only: bool = True,
-                        n_neighbor_bonds: int = 1) -> set:
+def get_breakable_bonds(
+    offmol: Molecule, get_bonds_only: bool = True, n_neighbor_bonds: int = 1
+) -> set:
     # single bonds -- break the middle one
     ATOM = "[!$(*#*)&!$(*=*)&A&!D1:{i}]"
     CHAIN = [ATOM.format(i=i + 1) for i in range(2 * (n_neighbor_bonds + 1))]
@@ -20,7 +20,7 @@ def get_breakable_bonds(offmol: Molecule,
         matches = offmol.chemical_environment_matches(SINGLE)
     except Exception:  # stereochemistry error without custom type
         return set()
-    
+
     unique_bonds = set()
     unique_matches = set()
     seen = set()
@@ -48,11 +48,12 @@ def replace_dummy_with_R(smiles: str, number_r_groups: bool = True) -> str:
     return re.sub(PATTERN, r"([R])", smiles)
 
 
-def get_scaffolds(offmol: Molecule,
-                  n_neighbor_bonds: int = 1,
-                  replace_with_r: bool = True) -> List[str]:
-    bonds = get_breakable_bonds(offmol, get_bonds_only=True,
-                                n_neighbor_bonds=n_neighbor_bonds)
+def get_scaffolds(
+    offmol: Molecule, n_neighbor_bonds: int = 1, replace_with_r: bool = True
+) -> List[str]:
+    bonds = get_breakable_bonds(
+        offmol, get_bonds_only=True, n_neighbor_bonds=n_neighbor_bonds
+    )
     smiles = fragment_into_substituent_smiles(offmol, bonds)
     if replace_with_r:
         smiles = [replace_dummy_with_R(s) for s in smiles]
