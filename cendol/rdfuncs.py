@@ -7,34 +7,13 @@ import numpy as np
 
 from openff.toolkit.topology import Molecule
 
-def fragment_smiles(fragmenter, smiles: str, combine: bool=False, **kwargs) -> List[str]:
-    """
-    Fragment SMILES string.
-
-    Parameters
-    ----------
-    fragmenter:
-        fragmenter class
-    smiles: str
-        SMILES string
-    combine: bool (optional)
-        Whether to combine resulting fragments so that original
-        residue is whole. This requires the original residue to
-        be labelled with atom map numbers.
-    **kwargs:
-        passed to fragmenter.fragment()
-
-    Returns
-    -------
-    List of isomeric SMILES fragments
-    """
-    mol = Molecule.from_smiles(smiles, allow_undefined_stereo=False)
-    rdmol = Chem.MolFromSmiles(smiles)
+def fragment_molecule(molecule, combine: bool=False, **kwargs):
+    rdmol = molecule.to_rdkit()
     central = set()
     for atom in rdmol.GetAtoms():
         if atom.GetAtomMapNum() != 0:
             central.add(atom.GetIdx())
-    fragger = fragmenter(mol)
+    fragger = fragmenter(molecule)
     fragger.fragment(**kwargs)
     fragments = []
     for (a1, a2), oemol in fragger.fragments.items():
@@ -60,6 +39,30 @@ def fragment_smiles(fragmenter, smiles: str, combine: bool=False, **kwargs) -> L
     Chem.SanitizeMol(rwmol)
     fragments = [Chem.MolToSmiles(rwmol, isomericSmiles=True, allHsExplicit=True)]
     return fragments
+
+def fragment_smiles(fragmenter, smiles: str, combine: bool=False, **kwargs) -> List[str]:
+    """
+    Fragment SMILES string.
+
+    Parameters
+    ----------
+    fragmenter:
+        fragmenter class
+    smiles: str
+        SMILES string
+    combine: bool (optional)
+        Whether to combine resulting fragments so that original
+        residue is whole. This requires the original residue to
+        be labelled with atom map numbers.
+    **kwargs:
+        passed to fragmenter.fragment()
+
+    Returns
+    -------
+    List of isomeric SMILES fragments
+    """
+    mol = Molecule.from_smiles(smiles, allow_undefined_stereo=False)
+    return fragment_molecule(mol, combine=combine, **kwargs)
 
 
 def get_neighbor_atom_indices(mol, atom_indices: List[int]=[]) -> List[int]:
@@ -167,3 +170,55 @@ def cleave_substituents_from_bond(offmol: Molecule,
                       rootedAtAtom=root_atom, canonical=True,
                       isomericSmiles=True, allHsExplicit=True)
     return smiles
+
+
+def rdmol_from_pdb_and_smiles(pdbfile, smiles):
+    pdb = Chem.MolFromPDBFile(pdbfile, removeHs=False)
+    smi = Chem.MolFromSmiles(smiles)
+    pdb_no_h_to_h_index = {}
+    for atom in pdb.GetAtoms():
+        if atom.GetSymbol() != "H":
+            pdb_no_h_to_h_index[len(pdb_no_h_to_h_index)] = atom.GetIdx()
+            
+    smi_no_h_to_h_index = {}
+    for atom in smi.GetAtoms():
+        if atom.GetSymbol() != "H":
+            smi_no_h_to_h_index[len(smi_no_h_to_h_index)] = atom.GetIdx()
+            
+    pdb2 = Chem.RemoveHs(pdb)
+    smi2 = Chem.RemoveHs(smi)
+    # PDB reads in all bonds as single, I think, and all atoms as no charge
+    for bond in smi2.GetBonds():
+        bond.SetBondType(Chem.BondType.SINGLE)
+    for atom in smi2.GetAtoms():
+        atom.SetFormalCharge(0)
+        atom.SetNoImplicit(False)
+    Chem.SanitizeMol(smi2)
+    smi2 = Chem.AddHs(smi2)
+    smi2 = Chem.RemoveHs(smi2)
+    
+    match = pdb2.GetSubstructMatch(smi2)
+    if not len(match):
+        raise ValueError("PDB file and SMILES do not match")
+    
+    for smi2_index, pdb2_index in enumerate(match):
+        smi_atom = smi.GetAtomWithIdx(smi_no_h_to_h_index[smi2_index])
+        pdb_atom = pdb.GetAtomWithIdx(pdb_no_h_to_h_index[pdb2_index])
+        pdb_atom.SetFormalCharge(smi_atom.GetFormalCharge())
+    
+    for bond in smi2.GetBonds():
+        i = bond.GetBeginAtomIdx()
+        j = bond.GetEndAtomIdx()
+        smi_i = smi_no_h_to_h_index[i]
+        smi_j = smi_no_h_to_h_index[j]
+        pdb_i = pdb_no_h_to_h_index[match[i]]
+        pdb_j = pdb_no_h_to_h_index[match[j]]
+        smi_bond = smi.GetBondBetweenAtoms(smi_i, smi_j)
+        pdb_bond = pdb.GetBondBetweenAtoms(pdb_i, pdb_j)
+        pdb_bond.SetBondType(smi_bond.GetBondType())
+
+    Chem.SanitizeMol(pdb)
+    return pdb
+    
+    
+    
