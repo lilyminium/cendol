@@ -7,25 +7,28 @@ import numpy as np
 
 from openff.toolkit.topology import Molecule
 
-def fragment_molecule(molecule, combine: bool=False, **kwargs):
-    rdmol = molecule.to_rdkit()
+def fragment_molecule(fragmenter, rdmol, combine: bool=False, **kwargs):
+    molecule = Molecule.from_rdkit(rdmol, allow_undefined_stereo=True)
     central = set()
     for atom in rdmol.GetAtoms():
         if atom.GetAtomMapNum() != 0:
             central.add(atom.GetIdx())
-    fragger = fragmenter(molecule)
-    fragger.fragment(**kwargs)
+    fragger = fragmenter()
+    results = fragger.fragment(molecule)
     fragments = []
-    for (a1, a2), oemol in fragger.fragments.items():
+    for (a1, a2), oemol in results.fragments_by_bond.items():
         if a1 in central or a2 in central:
             fragments.append(oemol)
     if not combine:
+        if not fragments:
+            return [rdmol]
         mols = [x.to_rdkit() for x in fragments]
-        return [Chem.MolToSmiles(x, isomericSmiles=True, allHsExplicit=True) for x in mols]
+        return mols
     # match all fragments to original molecule
     fragment_indices = set()
     for oemol in fragments:
-        rdfrag = Chem.MolFromSmiles(oemol.to_smiles())
+        rdfrag = Chem.MolFromSmiles(oemol.smiles)
+        rdfrag = Chem.AddHs(rdfrag)
         matches = rdmol.GetSubstructMatches(rdfrag)
         for m in matches:
             mset = set(m)
@@ -36,9 +39,11 @@ def fragment_molecule(molecule, combine: bool=False, **kwargs):
     for idx in atoms_to_keep[::-1]:
         rwmol.RemoveAtom(idx)
     rwmol.UpdatePropertyCache()
+    if not rwmol.GetNumAtoms():
+        return [rdmol]
     Chem.SanitizeMol(rwmol)
-    fragments = [Chem.MolToSmiles(rwmol, isomericSmiles=True, allHsExplicit=True)]
-    return fragments
+    return [rwmol]
+
 
 def fragment_smiles(fragmenter, smiles: str, combine: bool=False, **kwargs) -> List[str]:
     """
@@ -61,8 +66,8 @@ def fragment_smiles(fragmenter, smiles: str, combine: bool=False, **kwargs) -> L
     -------
     List of isomeric SMILES fragments
     """
-    mol = Molecule.from_smiles(smiles, allow_undefined_stereo=False)
-    return fragment_molecule(mol, combine=combine, **kwargs)
+    fragmented = fragment_molecule(Chem.MolFromSmiles(smiles), combine=combine, **kwargs)
+    return [Chem.MolToSmiles(x, isomericSmiles=True, allHsExplicit=True) for x in fragmented]
 
 
 def get_neighbor_atom_indices(mol, atom_indices: List[int]=[]) -> List[int]:
@@ -174,6 +179,11 @@ def cleave_substituents_from_bond(offmol: Molecule,
 
 def rdmol_from_pdb_and_smiles(pdbfile, smiles):
     pdb = Chem.MolFromPDBFile(pdbfile, removeHs=False)
+    return map_smiles_onto_pdb_rdmol(pdb, smiles)
+    
+    
+def map_smiles_onto_pdb_rdmol(rdmol, smiles):
+    pdb = rdmol
     smi = Chem.MolFromSmiles(smiles)
     pdb_no_h_to_h_index = {}
     for atom in pdb.GetAtoms():
@@ -219,6 +229,4 @@ def rdmol_from_pdb_and_smiles(pdbfile, smiles):
 
     Chem.SanitizeMol(pdb)
     return pdb
-    
-    
     
