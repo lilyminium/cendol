@@ -7,6 +7,23 @@ import numpy as np
 
 from openff.toolkit.topology import Molecule
 
+def fragment_into_dummy_smiles(offmol, cleave_bonds=[]):
+    rdmol = offmol.to_rdkit()
+    dummy = Chem.Atom("*")
+    for n_bond, bond in enumerate(cleave_bonds, 1):
+        bond_type = rdmol.GetBondBetweenAtoms(*bond).GetBondType()
+        rdmol.RemoveBond(*bond)
+        for atom_index in bond:
+            dummy_copy = Chem.Atom(dummy)
+            dummy_copy.SetAtomMapNum(n_bond)
+            new_atom_index = rdmol.AddAtom(dummy_copy)
+            rdmol.AddBond(atom_index, new_atom_index, bond_type)
+    mols = Chem.GetMolFrags(rdmol, asMols=True)
+    smiles = [Chem.MolToSmiles(m, isomericSmiles=True, allHsExplicit=True)
+              for m in mols]
+    return smiles
+
+
 def fragment_molecule(fragmenter, rdmol, combine: bool=False, **kwargs):
     molecule = Molecule.from_rdkit(rdmol, allow_undefined_stereo=True)
     central = set()

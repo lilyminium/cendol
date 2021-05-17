@@ -3,10 +3,10 @@ from typing import List
 
 from openff.toolkit.topology import Molecule
 
-try:
-    from .oefuncs import sdf_to_offmols, fragment_into_substituent_smiles
-except ImportError:
-    from .rdfuncs import sdf_to_offmols, fragment_into_substituent_smiles
+# try:
+#     from .oefuncs import sdf_to_offmols, fragment_into_substituent_smiles
+# except ImportError:
+#     from .rdfuncs import sdf_to_offmols, fragment_into_substituent_smiles
 
 
 def get_breakable_bonds(
@@ -41,20 +41,15 @@ def get_breakable_bonds(
     return unique_matches
 
 
-def replace_dummy_with_R(smiles: str, number_r_groups: bool = True) -> str:
-    PATTERN = r"\[\*:([0-9]+)\]"
-    if number_r_groups:
-        return re.sub(PATTERN, r"([R\1])", smiles)
-    return re.sub(PATTERN, r"([R])", smiles)
 
 
-def get_scaffolds(
-    offmol: Molecule, n_neighbor_bonds: int = 1, replace_with_r: bool = True
-) -> List[str]:
-    bonds = get_breakable_bonds(
-        offmol, get_bonds_only=True, n_neighbor_bonds=n_neighbor_bonds
-    )
-    smiles = fragment_into_substituent_smiles(offmol, bonds)
-    if replace_with_r:
-        smiles = [replace_dummy_with_R(s) for s in smiles]
-    return smiles
+# def get_scaffolds(
+#     offmol: Molecule, n_neighbor_bonds: int = 1, replace_with_r: bool = True
+# ) -> List[str]:
+#     bonds = get_breakable_bonds(
+#         offmol, get_bonds_only=True, n_neighbor_bonds=n_neighbor_bonds
+#     )
+#     smiles = fragment_into_substituent_smiles(offmol, bonds)
+#     if replace_with_r:
+#         smiles = [replace_dummy_with_R(s) for s in smiles]
+#     return smiles
