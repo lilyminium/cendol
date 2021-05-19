@@ -2,10 +2,138 @@ import re
 from typing import List, Tuple, Set
 
 from constructure.scaffolds import Scaffold
+from constructure.constructors import RDKitConstructor as Constructor
 from rdkit import Chem
 import numpy as np
 
 from openff.toolkit.topology import Molecule
+
+from . import utils
+
+def label_atoms(smiles, scaffold, substituents,
+                label_central_atoms=False,
+                label_monomers=False,
+                monomer_smiles=[]):
+    dummy_substituents = {}
+    for i, sub in substituents.items():
+        dummy_substituents[i] = clip_r_from_smiles(sub, remove_hs=False, label=False)
+    rdmol = Chem.MolFromSmiles(smiles)
+    rdmol = Chem.AddHs(rdmol)
+    rdmol = label_scaffold_atoms(rdmol, scaffold.smiles, dummy_substituents)
+    if label_monomers:
+        rdmol = label_monomer_atoms(rdmol, monomer_smiles=monomer_smiles)
+    # if not label_central_atoms:
+    #     for atom in rdmol.GetAtoms():
+    #         if atom.GetAtomMapNum() > 0:
+    #             atom.SetAtomMapNum(0)
+    return Chem.MolToSmiles(rdmol, isomericSmiles=True, allHsExplicit=True)
+
+
+def label_monomer_atoms(rdmol, monomer_smiles=[]):
+    clipped = [clip_r_from_smiles(smi, label=False, remove_hs=False) for smi in monomer_smiles]
+    clipped_mols = [Chem.MolFromSmarts(smi) for smi in clipped]
+
+    for n_mol, monomer in enumerate(clipped_mols, 1):
+        matches = rdmol.GetSubstructMatches(monomer)
+        for match in matches:
+            anums = [rdmol.GetAtomWithIdx(i).GetAtomMapNum() for i in match]
+            if not any(i != 0 for i in anums):
+                for atom_index in match:
+                    atom = rdmol.GetAtomWithIdx(atom_index)
+                    atom.SetAtomMapNum(-n_mol)
+    return rdmol
+
+    
+
+def is_correct_match(rdmol, match_indices, index_to_r, sub_mols):
+    rdcopy = Chem.RWMol(rdmol)
+    for atom in rdcopy.GetAtoms():
+        atom.SetAtomMapNum(atom.GetIdx())
+    for index in sorted(match_indices)[::-1]:
+        if index not in index_to_r:
+            rdcopy.RemoveAtom(index)
+    frag_indices = []
+    fragments = Chem.GetMolFrags(rdcopy, asMols=True, sanitizeFrags=False,
+                                 fragsMolAtomMapping=frag_indices)
+    for frag, indices in zip(fragments, frag_indices):
+        for index_ in indices:
+            index = rdcopy.GetAtomWithIdx(index_).GetAtomMapNum()
+            if index in index_to_r:
+                r_num = index_to_r[index]
+                break
+        frag = Chem.RemoveHs(frag)
+        Chem.SanitizeMol(frag)
+        sub = sub_mols[r_num]
+        # print(r_num)
+        sub = Chem.RemoveAllHs(sub_mols[r_num])
+        match = frag.GetSubstructMatch(sub)
+        # match = frag.GetSubstructMatch(sub_mols[r_num])
+        if not match:
+            # print("not match")
+            # print(Chem.MolToSmiles(frag, isomericSmiles=True))
+            # print(Chem.MolToSmiles(sub, isomericSmiles=True))
+            return False
+    return True
+
+def label_scaffold_atoms(rdmol, r_group_smiles, dummy_substituents):
+    dummy_smiles = utils.replace_R_with_dummy(r_group_smiles)
+    wild_smiles = utils.replace_dummy_with_wildcard(dummy_smiles)
+    pattern = Chem.MolFromSmarts(wild_smiles)
+    matches = rdmol.GetSubstructMatches(pattern)
+    if not matches:
+        raise ValueError(f"Could not label scaffold with r_group {r_group_smiles}, "
+                         f"{Chem.MolToSmiles(rdmol, isomericSmiles=True, allHsExplicit=True)}, "
+                         f"{dummy_substituents}")
+
+    # which match is it? Test by cutting bonds and comparing
+    # to substituents
+    r_pattern_indices = {}
+    for atom in pattern.GetAtoms():
+        anum = atom.GetAtomMapNum()
+        if anum != 0:
+            r_pattern_indices[anum] = atom.GetIdx()
+    
+    sub_mols = {}
+    for i, smi in dummy_substituents.items():
+        mol = Chem.MolFromSmarts(smi)
+        sub_mols[i] = mol
+    
+    for match in matches:
+        index_to_r = {match[i]: a for a, i in r_pattern_indices.items()}
+        indices = [x for x in match if x not in index_to_r]
+        if is_correct_match(rdmol, match, index_to_r, sub_mols):
+            break
+    for i, index in enumerate(indices, 1):
+        rdmol.GetAtomWithIdx(index).SetAtomMapNum(i)
+        
+    return rdmol
+    
+def set_atom_numbers(smiles, number=0):
+    mol = Chem.MolFromSmiles(smiles)
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(int(number))
+    return Chem.MolToSmiles(mol, isomericSmiles=True, allHsExplicit=True)
+
+def fragment_into_dummy_smiles(offmol, cleave_bonds=[]):
+    rdmol = Chem.RWMol(offmol.to_rdkit())
+    dummy = Chem.Atom("*")
+    r_linkages = {}
+    counter = 1
+    for bond in cleave_bonds:
+        bond_type = rdmol.GetBondBetweenAtoms(*bond).GetBondType()
+        rdmol.RemoveBond(*bond)
+        r_linkages[counter] = [counter + 1]
+        for atom_index in bond:
+            dummy_copy = Chem.Atom(dummy)
+            dummy_copy.SetAtomMapNum(counter)
+            new_atom_index = rdmol.AddAtom(dummy_copy)
+            rdmol.AddBond(atom_index, new_atom_index, bond_type)
+            counter += 1
+    mols = Chem.GetMolFrags(rdmol, asMols=True)
+    smiles = [Chem.MolToSmiles(m, isomericSmiles=True, allHsExplicit=True)
+              for m in mols]
+    return smiles, r_linkages
+
 
 def fragment_molecule(fragmenter, rdmol, combine: bool=False, **kwargs):
     molecule = Molecule.from_rdkit(rdmol, allow_undefined_stereo=True)
@@ -230,3 +358,101 @@ def map_smiles_onto_pdb_rdmol(rdmol, smiles):
     Chem.SanitizeMol(pdb)
     return pdb
     
+
+def clip_r_from_smiles(smiles: str, remove_hs: bool = True, label: bool = True) -> str:
+    subbed = utils.replace_R_with_dummy(smiles)
+    rdmol = Chem.RWMol(Chem.AddHs(Chem.MolFromSmiles(subbed)))
+    to_remove = []
+    # loop over this twice just in case
+    # removing atoms screws up the iteration
+    for atom in rdmol.GetAtoms():
+        if atom.HasProp("dummyLabel"):
+            to_remove.append(atom.GetIdx())
+    for idx in sorted(to_remove)[::-1]:
+        rdmol.RemoveAtom(idx)
+    rdmol.UpdatePropertyCache()
+    if remove_hs:
+        rdmol = Chem.RemoveHs(rdmol, sanitize=False)
+    if label:
+        for atom in rdmol.GetAtoms():
+            atom.SetAtomMapNum(atom.GetIdx())
+    return Chem.MolToSmiles(rdmol, isomericSmiles=True, allHsExplicit=True)
+
+
+def get_subrdmol(rdmol, indices: list=[],
+                 label_indices: list=[],
+                 sanitize: bool=False):
+    """Create new sub-molecule from selected atom indices
+    
+    Parameters
+    ----------
+    rdmol: rdkit.Chem.rdchem.Mol
+        Input molecule
+    indices: iterable of ints
+        atom indices to include from input molecule, indexed from 0
+    sanitize: bool
+        whether to sanitize the molecule (recommend: no)
+        
+    Returns
+    -------
+    rdkit.Chem.rdchem.Mol: subset of molecule
+    """
+    submol = Chem.RWMol(rdmol)
+    for i, lix in enumerate(label_indices, 1):
+        at = submol.GetAtomWithIdx(int(lix))
+        at.SetAtomMapNum(i)
+    indices = sorted(set(indices) | set(label_indices))
+
+    ix = sorted([at.GetIdx() for at in rdmol.GetAtoms()
+                 if at.GetIdx() not in indices])
+    for i in ix[::-1]:
+        submol.RemoveAtom(int(i))
+    if sanitize:
+        Chem.SanitizeMol(submol)
+    return submol
+
+def get_sub_smarts(mol, indices: list=[], label_indices: list=[]):
+    """Get SMARTS of selected atoms in molecule
+    
+    Parameters
+    ----------
+    mol: openff.toolkit.topology.molecule.Molecule
+        Input molecule
+    indices: iterable of ints
+        atom indices to include in SMARTS, indexed from 0
+    label_indices: iterable of ints
+        atom indices to label, indexed from 0. The atoms
+        will be labelled in the order specified. Labels
+        begin from 1.
+        
+    Returns
+    -------
+    str: SMARTS string
+    """
+    rdmol = mol.to_rdkit()
+    submol =  get_subrdmol(rdmol, indices=indices,
+                           label_indices=label_indices)
+    return Chem.MolToSmarts(submol, isomericSmiles=False)
+
+def get_sub_smiles(mol, indices: list=[], label_indices: list=[]):
+    """Get SMARTS of selected atoms in molecule
+    
+    Parameters
+    ----------
+    mol: openff.toolkit.topology.molecule.Molecule
+        Input molecule
+    indices: iterable of ints
+        atom indices to include in SMARTS, indexed from 0
+    label_indices: iterable of ints
+        atom indices to label, indexed from 0. The atoms
+        will be labelled in the order specified. Labels
+        begin from 1.
+        
+    Returns
+    -------
+    str: SMARTS string
+    """
+    rdmol = mol.to_rdkit()
+    submol =  get_subrdmol(rdmol, indices=indices,
+                           label_indices=label_indices)
+    return Chem.MolToSmiles(submol, allHsExplicit=True)
