@@ -4,6 +4,7 @@ try:
 except ImportError:
     from .rdfuncs import fragment_smiles, fragment_into_dummy_smiles
 
+from . import utils
 
 def get_breakable_bonds(offmol, get_bonds_only=True, n_neighbor_bonds=1,
                         ignore_neighbors=False):
@@ -31,8 +32,11 @@ def get_breakable_bonds(offmol, get_bonds_only=True, n_neighbor_bonds=1,
     return unique_matches
 
 
-def fragment_into_substituent_smiles(offmol, cleave_bonds=[]):
-    smiles = fragment_into_dummy_smiles(offmol, cleave_bonds)
+def split_into_substituent_smiles(offmol, cleave_bonds=[]):
+    smiles, r_linkages = fragment_into_dummy_smiles(offmol, cleave_bonds)
+    smiles = [utils.replace_dummy_with_R(smi) for smi in smiles]
+    return smiles, r_linkages
+
 
 
 def fragment_capped_monomers(fragmenter, smiles, combine=False):
